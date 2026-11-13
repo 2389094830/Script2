@@ -55,6 +55,32 @@ local function sendDiscordAlert(title, message)
     end
 end
 
+--// AUTO SHOP BUY
+
+if SHOP == true then
+    task.spawn(function()
+        while true do 
+            wait(1)
+            remote:FireServer("BuyShardShopItem", "1")
+            wait(1)
+            remote:FireServer("BuyShardShopItem", 2)
+            wait(1)
+            remote:FireServer("BuyShardShopItem", 3)
+            wait(1)
+            remote:FireServer("BuyMerchantItem", 1)
+            wait(1)
+            remote:FireServer("BuyMerchantItem", 2)
+            wait(1)
+            remote:FireServer("BuyEventShopItem", 7, 1)
+            wait(1)
+            remote:FireServer("BuyEventShopItem", 7, 2)
+            wait(1)
+            remote:FireServer("BuyEventShopItem", 7, 3)
+            wait(1)
+        end
+    end)
+end
+
 --// CHARACTER HELPERS
 local function getRoot()
     local character = player.Character or player.CharacterAdded:Wait()
