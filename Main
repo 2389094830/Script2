@@ -15,6 +15,7 @@ local CONFIG = {
     HATCH_EGG_NAME = "BOUNTY", -- Set to "BOUNTY" to automatically target the active Secret Bounty egg
     EGG_FOLDER = "Eggs",
     EGG_HOTKEY_PART = "Hotkey",
+    SHOP = "True"
     
     HATCH_INTERVAL = 0.05,
     TELEPORT_WAIT = 0.5,
