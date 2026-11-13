@@ -12,10 +12,10 @@ local SecretBountyService = require(ReplicatedStorage:WaitForChild("Assets"):Wai
 
 --// CONFIGURATION
 local CONFIG = {
-    HATCH_EGG_NAME = getgenv().HATCH_EGG_NAME
+    HATCH_EGG_NAME = getgenv().HATCH_EGG_NAME or "BOUNTY",
     EGG_FOLDER = "Eggs",
     EGG_HOTKEY_PART = "Hotkey",
-    SHOP = getgenv().SHOP,
+    SHOP = getgenv().SHOP or False,
     
     HATCH_INTERVAL = 0.05,
     TELEPORT_WAIT = 0.5,
