@@ -41,7 +41,7 @@ local function sendDiscordAlert(title, message)
         }}
     }
 
-    local urls = {CONFIG.WEBHOOK_URL, CONFIG.WEBHOOK_URL2}
+    local urls = {CONFIG.WEBHOOK_URL}
 
     for _, url in ipairs(urls) do
         if url then
@@ -63,7 +63,7 @@ local function sendSecretWebhook(petName, eggName, chance)
     if not webhookUrl or webhookUrl == "" then return end
 
     local payload = {
-        ["content"] = "@everyone Secret Pet Hatched!",
+        ["content"] = "@everyone Secret Pet Hatched!" .. player.name,
         ["embeds"] = {{
             ["title"] = "🎉 Secret Hatch Detected!",
             ["color"] = 65280,
@@ -111,7 +111,7 @@ if CONFIG.SHOP == true then
     end)
 end
 
---// DESTROY / WORKSPACE CLEANUP
+--// DESTROY / WORKSPACE CLEANUP (Targeted)
 if CONFIG.DESTROY == true then
     local localPlayer = Players.LocalPlayer
 
@@ -128,20 +128,18 @@ if CONFIG.DESTROY == true then
     end
     localPlayer.CharacterAdded:Connect(anchorCharacter)
 
-    -- 2. Cleanup Workspace while keeping protected folders and loose active models
-    for _, obj in ipairs(Workspace:GetChildren()) do
-        local name = obj.Name
-        if name ~= "Eggs" and 
-           name ~= "Activations" and 
-           name ~= "Players" and 
-           name ~= "TeleportPoints" and 
-           name ~= "Terrain" and 
-           not obj:IsA("Camera") and 
-           not (localPlayer and obj == localPlayer.Character) and
-           name ~= "Egg" and 
-           name ~= "Kitty" and 
-           name ~= "Bunny" then
-            
+    -- 2. Explicitly destroy only the specified clutter items in Workspace
+    local targetsToDestroy = {
+        "Cutscenes",
+        "Portals",
+        "FloatingIslands",
+        "Worlds"
+    }
+
+    for _, name in ipairs(targetsToDestroy) do
+        local obj = Workspace:FindFirstChild(name)
+        if obj then
+            print("Destroying clutter:", obj.Name)
             obj:Destroy()
         end
     end
@@ -199,12 +197,30 @@ local function getEggHotkeyPosition()
     return nil
 end
 
---// SECRET PET MODULE HELPERS
+--// SECRET PET LOOKUP HELPERS (Must sit above processHatchDisplay)
+local function getEggData(eggName)
+    if not EggModule then return nil end
+    if EggModule[eggName] then return EggModule[eggName] end
+    
+    for key, data in pairs(EggModule) do
+        if type(key) == "string" and string.lower(key) == string.lower(tostring(eggName)) then
+            return data
+        end
+    end
+    
+    for _, data in pairs(EggModule) do
+        if type(data) == "table" and data.Ignore then
+            return data
+        end
+    end
+    return nil
+end
+
 local function isSecretPet(eggName, petName)
-    local eggData = EggModule[eggName]
+    local eggData = getEggData(eggName)
     if eggData and eggData.Ignore then
         for _, ignoredPet in ipairs(eggData.Ignore) do
-            if ignoredPet == petName then
+            if type(ignoredPet) == "string" and string.lower(ignoredPet) == string.lower(tostring(petName)) then
                 return true
             end
         end
@@ -213,10 +229,10 @@ local function isSecretPet(eggName, petName)
 end
 
 local function getPetChance(eggName, petName)
-    local eggData = EggModule[eggName]
+    local eggData = getEggData(eggName)
     if eggData and eggData.Rarities then
         for _, rarityEntry in ipairs(eggData.Rarities) do
-            if rarityEntry[1] == petName then
+            if type(rarityEntry) == "table" and string.lower(tostring(rarityEntry[1])) == string.lower(tostring(petName)) then
                 return rarityEntry[2] or "Unknown"
             end
         end
@@ -224,9 +240,8 @@ local function getPetChance(eggName, petName)
     return "Unknown"
 end
 
---// HATCH DISPLAY CLEANUP & SECRET DETECTION
+--// SECRET PET DETECTION & AUTO-SKIP HATCH ANIMATION
 local function isHatchDisplay(obj)
-    if obj.Name == "Egg" then return true end
     return obj:IsA("Model")
         and obj:FindFirstChild("State")
         and obj:FindFirstChild("Decore")
@@ -234,11 +249,6 @@ local function isHatchDisplay(obj)
 end
 
 local function processHatchDisplay(obj)
-    if obj.Name == "Egg" then 
-        obj:Destroy()
-        return 
-    end
-    
     if isHatchDisplay(obj) then
         local petName = obj.Name
         local currentEgg = getTargetEggName()
@@ -248,13 +258,7 @@ local function processHatchDisplay(obj)
             print("[Secret Found]:", petName, "| Chance:", chance)
             sendSecretWebhook(petName, currentEgg, chance)
         end
-        
-        obj:Destroy()
     end
-end
-
-for _, obj in ipairs(Workspace:GetChildren()) do
-    processHatchDisplay(obj)
 end
 
 Workspace.ChildAdded:Connect(function(obj)
@@ -263,6 +267,33 @@ Workspace.ChildAdded:Connect(function(obj)
             processHatchDisplay(obj)
         end
     end)
+end)
+
+-- Force-trigger EggService skip function when MultiPetHatch appears
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        pcall(function()
+            local playerGui = player:FindFirstChild("PlayerGui")
+            local screenGui = playerGui and playerGui:FindFirstChild("ScreenGui")
+            local multiPetHatch = screenGui and screenGui:FindFirstChild("MultiPetHatch")
+            
+            if multiPetHatch then
+                local skipBtn = multiPetHatch:FindFirstChild("Skip")
+                if skipBtn and getconnections then
+                    for _, conn in ipairs(getconnections(skipBtn.MouseButton1Down)) do
+                        local func = conn.Function
+                        if func then
+                            local ok = pcall(func)
+                            if not ok then
+                                pcall(func, skipBtn)
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
 end)
 
 --// UI READER & REMAINDER CALCULATOR
@@ -392,3 +423,19 @@ task.spawn(function()
         task.wait(0.5)
     end
 end)
+--// Hatch Speed Modifier
+local modules = ReplicatedStorage:FindFirstChild("Assets") and ReplicatedStorage.Assets:FindFirstChild("Modules")
+
+if modules then
+    -- Try to find the module handling animation speed (u138 reference from your snippet)
+    pcall(function()
+        local hatchSpeedMod = require(modules:FindFirstChild("EggService") or modules:FindFirstChild("ItemDataService"))
+        if hatchSpeedMod and type(hatchSpeedMod) == "table" then
+            -- Override speed function if exposed
+            hatchSpeedMod.GetHatchAnimationSpeed = function()
+                return 25 -- Instant multiplier
+            end
+            print("[Test]: Successfully spoofed hatch animation speed multiplier!")
+        end
+    end)
+end
