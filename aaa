@@ -92,6 +92,7 @@ if CONFIG.DESTROY == true then
            obj.Name ~= "Players" and 
            obj.Name ~= "TeleportPoints" and 
            obj.Name ~= "Terrain" and 
+            obj.Name ~= "Egg" and
            not obj:IsA("Camera") and 
            (localPlayer and obj ~= localPlayer.Character) then
             
