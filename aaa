@@ -85,23 +85,36 @@ end
 --// DESTROY
 
 if CONFIG.DESTROY == true then
+    local Workspace = game:GetService("Workspace")
+    local Players = game:GetService("Players")
+    local localPlayer = Players.LocalPlayer
 
+    -- 1. Anchor the player's HumanoidRootPart so you float safely without changing Workspace.Gravity
+    local function anchorCharacter(character)
+        local root = character:WaitForChild("HumanoidRootPart", 5)
+        if root then
+            root.Anchored = true
+        end
+    end
+
+    if localPlayer.Character then
+        anchorCharacter(localPlayer.Character)
+    end
+    localPlayer.CharacterAdded:Connect(anchorCharacter)
+
+    -- 2. Cleanup Workspace while keeping Eggs and essential folders
     for _, obj in ipairs(Workspace:GetChildren()) do
         if obj.Name ~= "Eggs" and 
            obj.Name ~= "Activations" and 
            obj.Name ~= "Players" and 
            obj.Name ~= "TeleportPoints" and 
            obj.Name ~= "Terrain" and 
-            obj.Name ~= "Egg" and
            not obj:IsA("Camera") and 
            (localPlayer and obj ~= localPlayer.Character) then
             
             obj:Destroy()
         end
     end
-
-    Workspace.Gravity = 0
-    print("Destroy cleanup & zero gravity applied!")
 end
 
 --// CHARACTER HELPERS
