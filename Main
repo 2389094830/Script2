@@ -16,6 +16,7 @@ local CONFIG = {
     EGG_FOLDER = "Eggs",
     EGG_HOTKEY_PART = "Hotkey",
     SHOP = getgenv().SHOP or False,
+    DESTROY = getgenv().DESTROY or false,
     
     HATCH_INTERVAL = 0.05,
     TELEPORT_WAIT = 0.5,
@@ -81,6 +82,29 @@ if SHOP == true then
         end
     end)
 end
+--// DESTROY
+
+if CONFIG.DESTROY == true then
+    local Workspace = game:GetService("Workspace")
+    local Players = game:GetService("Players")
+    local localPlayer = Players.LocalPlayer
+
+    for _, obj in ipairs(Workspace:GetChildren()) do
+        if obj.Name ~= "Eggs" and 
+           obj.Name ~= "Activations" and 
+           obj.Name ~= "Players" and 
+           obj.Name ~= "TeleportPoints" and 
+           obj.Name ~= "Terrain" and 
+           not obj:IsA("Camera") and 
+           (localPlayer and obj ~= localPlayer.Character) then
+            
+            obj:Destroy()
+        end
+    end
+
+    Workspace.Gravity = 0
+    print("Destroy cleanup & zero gravity applied!")
+end
 
 --// CHARACTER HELPERS
 local function getRoot()
@@ -97,14 +121,24 @@ local function teleportTo(targetPos)
 end
 
 --// GET ACTIVE EGG NAME (Supports "BOUNTY" dynamic lookup)
-local function getTargetEggName()
-    if CONFIG.HATCH_EGG_NAME == "BOUNTY" then
+-- Store a cached version of the bounty egg
+local cachedBountyEgg = "BOUNTY"
+
+task.spawn(function()
+    while true do
         local success, bountyData = pcall(function()
             return SecretBountyService:Get()
         end)
         if success and bountyData and bountyData.Egg then
-            return bountyData.Egg
+            cachedBountyEgg = bountyData.Egg
         end
+        task.wait(300) -- Wait 5 minutes before checking again
+    end
+end)
+
+local function getTargetEggName()
+    if CONFIG.HATCH_EGG_NAME == "BOUNTY" then
+        return cachedBountyEgg
     end
     return CONFIG.HATCH_EGG_NAME
 end
@@ -252,7 +286,7 @@ task.spawn(function()
                     task.wait(CONFIG.HATCH_INTERVAL)
                 end
                 print("-> Target Eggs reached!")
-                sendDiscordAlert("Quest Completed", "Finished Egg Quest on " .. activeEggName .. "!")
+                sendDiscordAlert("Quest Completed", "Finished Egg Quest on " .. activeEggName .. , .. player.Name"!")
             end
 
         -- 3. CURRENCY / GEMS / LEGENDARIES (30-minute passive check)
