@@ -1,4 +1,3 @@
-
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
@@ -7,15 +6,16 @@ local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
 local remote = ReplicatedStorage:WaitForChild("NetworkRemoteEvent")
 
--- Require SecretBountyService for dynamic bounty egg tracking
+-- Require SecretBountyService and EggModule
 local SecretBountyService = require(ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Modules"):WaitForChild("SecretBountyService"))
+local EggModule = require(ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Modules"):WaitForChild("ItemDataService"):WaitForChild("EggModule"))
 
 --// CONFIGURATION
 local CONFIG = {
     HATCH_EGG_NAME = getgenv().HATCH_EGG_NAME or "BOUNTY",
     EGG_FOLDER = "Eggs",
     EGG_HOTKEY_PART = "Hotkey",
-    SHOP = getgenv().SHOP or False,
+    SHOP = getgenv().SHOP or false,
     DESTROY = getgenv().DESTROY or false,
     
     HATCH_INTERVAL = 0.05,
@@ -25,12 +25,12 @@ local CONFIG = {
     RING_POS = Vector3.new(-1725.27, 1852.54, 11031.05),
     PASSIVE_CHECK_INTERVAL = 120, -- 30 minutes for currency/gems/legendary passive quests
     
-    -- Discord Webhook URL provided for alerts
+    -- Discord Webhook URLs
     WEBHOOK_URL = "https://discord.com/api/webhooks/1570625821121454200/sxT-R7DSjI4yqOsBTacifbhE_FCfs16RhttBtmWiGlof5gF32_-fdPefEPcTYn_JrxV9",
     WEBHOOK_URL2 = "https://discord.com/api/webhooks/1570855065370108026/NfE3-3pfPsXBHaXmdTqZt3RrU1gEgZTpXkBOL2ytpB24mchO1YAto6-8tfVew-dpVBGZ",
 }
 
---// DISCORD NOTIFICATION HELPER
+--// DISCORD NOTIFICATION HELPERS
 local function sendDiscordAlert(title, message)
     local payload = {
         ["embeds"] = {{
@@ -57,9 +57,37 @@ local function sendDiscordAlert(title, message)
     end
 end
 
---// AUTO SHOP BUY
+-- Function to send secret alerts exclusively to webhook_url2
+local function sendSecretWebhook(petName, eggName, chance)
+    local webhookUrl = CONFIG.WEBHOOK_URL2
+    if not webhookUrl or webhookUrl == "" then return end
 
-if SHOP == true then
+    local payload = {
+        ["content"] = "@everyone Secret Pet Hatched!",
+        ["embeds"] = {{
+            ["title"] = "🎉 Secret Hatch Detected!",
+            ["color"] = 65280,
+            ["fields"] = {
+                {["name"] = "Pet", ["value"] = tostring(petName), ["inline"] = true},
+                {["name"] = "Egg", ["value"] = tostring(eggName), ["inline"] = true},
+                {["name"] = "Chance", ["value"] = tostring(chance), ["inline"] = true}
+            },
+            ["timestamp"] = os.date("!%Y-%m-%dT%H:%M:%SZ")
+        }}
+    }
+
+    pcall(function()
+        request({
+            Url = webhookUrl,
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = HttpService:JSONEncode(payload)
+        })
+    end)
+end
+
+--// AUTO SHOP BUY
+if CONFIG.SHOP == true then
     task.spawn(function()
         while true do 
             task.wait(1)
@@ -82,14 +110,12 @@ if SHOP == true then
         end
     end)
 end
---// DESTROY
 
+--// DESTROY / WORKSPACE CLEANUP
 if CONFIG.DESTROY == true then
-    local Workspace = game:GetService("Workspace")
-    local Players = game:GetService("Players")
     local localPlayer = Players.LocalPlayer
 
-    -- 1. Anchor the player's HumanoidRootPart so you float safely without changing Workspace.Gravity
+    -- 1. Anchor the player's HumanoidRootPart safely
     local function anchorCharacter(character)
         local root = character:WaitForChild("HumanoidRootPart", 5)
         if root then
@@ -102,15 +128,19 @@ if CONFIG.DESTROY == true then
     end
     localPlayer.CharacterAdded:Connect(anchorCharacter)
 
-    -- 2. Cleanup Workspace while keeping Eggs and essential folders
+    -- 2. Cleanup Workspace while keeping protected folders and loose active models
     for _, obj in ipairs(Workspace:GetChildren()) do
-        if obj.Name ~= "Eggs" and 
-           obj.Name ~= "Activations" and 
-           obj.Name ~= "Players" and 
-           obj.Name ~= "TeleportPoints" and 
-           obj.Name ~= "Terrain" and 
+        local name = obj.Name
+        if name ~= "Eggs" and 
+           name ~= "Activations" and 
+           name ~= "Players" and 
+           name ~= "TeleportPoints" and 
+           name ~= "Terrain" and 
            not obj:IsA("Camera") and 
-           (localPlayer and obj ~= localPlayer.Character) then
+           not (localPlayer and obj == localPlayer.Character) and
+           name ~= "Egg" and 
+           name ~= "Kitty" and 
+           name ~= "Bunny" then
             
             obj:Destroy()
         end
@@ -132,7 +162,6 @@ local function teleportTo(targetPos)
 end
 
 --// GET ACTIVE EGG NAME (Supports "BOUNTY" dynamic lookup)
--- Store a cached version of the bounty egg
 local cachedBountyEgg = "BOUNTY"
 
 task.spawn(function()
@@ -143,7 +172,7 @@ task.spawn(function()
         if success and bountyData and bountyData.Egg then
             cachedBountyEgg = bountyData.Egg
         end
-        task.wait(300) -- Wait 5 minutes before checking again
+        task.wait(300)
     end
 end)
 
@@ -170,7 +199,32 @@ local function getEggHotkeyPosition()
     return nil
 end
 
---// HATCH DISPLAY CLEANUP
+--// SECRET PET MODULE HELPERS
+local function isSecretPet(eggName, petName)
+    local eggData = EggModule[eggName]
+    if eggData and eggData.Ignore then
+        for _, ignoredPet in ipairs(eggData.Ignore) do
+            if ignoredPet == petName then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function getPetChance(eggName, petName)
+    local eggData = EggModule[eggName]
+    if eggData and eggData.Rarities then
+        for _, rarityEntry in ipairs(eggData.Rarities) do
+            if rarityEntry[1] == petName then
+                return rarityEntry[2] or "Unknown"
+            end
+        end
+    end
+    return "Unknown"
+end
+
+--// HATCH DISPLAY CLEANUP & SECRET DETECTION
 local function isHatchDisplay(obj)
     if obj.Name == "Egg" then return true end
     return obj:IsA("Model")
@@ -179,19 +233,39 @@ local function isHatchDisplay(obj)
         and obj:FindFirstChild("Root")
 end
 
+local function processHatchDisplay(obj)
+    if obj.Name == "Egg" then 
+        obj:Destroy()
+        return 
+    end
+    
+    if isHatchDisplay(obj) then
+        local petName = obj.Name
+        local currentEgg = getTargetEggName()
+        
+        if isSecretPet(currentEgg, petName) then
+            local chance = getPetChance(currentEgg, petName)
+            print("[Secret Found]:", petName, "| Chance:", chance)
+            sendSecretWebhook(petName, currentEgg, chance)
+        end
+        
+        obj:Destroy()
+    end
+end
+
 for _, obj in ipairs(Workspace:GetChildren()) do
-    if isHatchDisplay(obj) then obj:Destroy() end
+    processHatchDisplay(obj)
 end
 
 Workspace.ChildAdded:Connect(function(obj)
     task.defer(function()
-        if obj.Parent == Workspace and isHatchDisplay(obj) then
-            obj:Destroy()
+        if obj.Parent == Workspace then
+            processHatchDisplay(obj)
         end
     end)
 end)
 
---// UI READER & REMAINDER CALCULATOR (`Target - Current = Remaining`)
+--// UI READER & REMAINDER CALCULATOR
 local function getQuestDetails()
     local pGui = player:FindFirstChild("PlayerGui")
     local screenGui = pGui and pGui:FindFirstChild("ScreenGui")
@@ -297,7 +371,7 @@ task.spawn(function()
                     task.wait(CONFIG.HATCH_INTERVAL)
                 end
                 print("-> Target Eggs reached!")
-                sendDiscordAlert("Quest Completed", "Finished Egg Quest on " .. activeEggName .. player.Name"!")
+                sendDiscordAlert("Quest Completed", "Finished Egg Quest on " .. activeEggName .. " for " .. player.Name .. "!")
             end
 
         -- 3. CURRENCY / GEMS / LEGENDARIES (30-minute passive check)
