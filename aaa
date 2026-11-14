@@ -1,1 +1,306 @@
 
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local HttpService = game:GetService("HttpService")
+
+local player = Players.LocalPlayer
+local remote = ReplicatedStorage:WaitForChild("NetworkRemoteEvent")
+
+-- Require SecretBountyService for dynamic bounty egg tracking
+local SecretBountyService = require(ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Modules"):WaitForChild("SecretBountyService"))
+
+--// CONFIGURATION
+local CONFIG = {
+    HATCH_EGG_NAME = getgenv().HATCH_EGG_NAME or "BOUNTY",
+    EGG_FOLDER = "Eggs",
+    EGG_HOTKEY_PART = "Hotkey",
+    SHOP = getgenv().SHOP or False,
+    DESTROY = getgenv().DESTROY or false,
+    
+    HATCH_INTERVAL = 0.05,
+    TELEPORT_WAIT = 0.5,
+    
+    BUBBLE_POS = Vector3.new(-155, 45, -149),
+    RING_POS = Vector3.new(-1725.27, 1852.54, 11031.05),
+    PASSIVE_CHECK_INTERVAL = 120, -- 30 minutes for currency/gems/legendary passive quests
+    
+    -- Discord Webhook URL provided for alerts
+    WEBHOOK_URL = "https://discord.com/api/webhooks/1570625821121454200/sxT-R7DSjI4yqOsBTacifbhE_FCfs16RhttBtmWiGlof5gF32_-fdPefEPcTYn_JrxV9",
+    WEBHOOK_URL2 = "https://discord.com/api/webhooks/1570855065370108026/NfE3-3pfPsXBHaXmdTqZt3RrU1gEgZTpXkBOL2ytpB24mchO1YAto6-8tfVew-dpVBGZ",
+}
+
+--// DISCORD NOTIFICATION HELPER
+local function sendDiscordAlert(title, message)
+    local payload = {
+        ["embeds"] = {{
+            ["title"] = title,
+            ["description"] = message,
+            ["color"] = 65280, -- Green color
+            ["timestamp"] = os.date("!%Y-%m-%dT%H:%M:%SZ")
+        }}
+    }
+
+    local urls = {CONFIG.WEBHOOK_URL, CONFIG.WEBHOOK_URL2}
+
+    for _, url in ipairs(urls) do
+        if url then
+            pcall(function()
+                request({
+                    Url = url,
+                    Method = "POST",
+                    Headers = {["Content-Type"] = "application/json"},
+                    Body = HttpService:JSONEncode(payload)
+                })
+            end)
+        end
+    end
+end
+
+--// AUTO SHOP BUY
+
+if SHOP == true then
+    task.spawn(function()
+        while true do 
+            task.wait(1)
+            remote:FireServer("BuyShardShopItem", "1")
+            task.wait(1)
+            remote:FireServer("BuyShardShopItem", 2)
+            task.wait(1)
+            remote:FireServer("BuyShardShopItem", 3)
+            task.wait(1)
+            remote:FireServer("BuyMerchantItem", 1)
+            task.wait(1)
+            remote:FireServer("BuyMerchantItem", 2)
+            task.wait(1)
+            remote:FireServer("BuyEventShopItem", 7, 1)
+            task.wait(1)
+            remote:FireServer("BuyEventShopItem", 7, 2)
+            task.wait(1)
+            remote:FireServer("BuyEventShopItem", 7, 3)
+            task.wait(1)
+        end
+    end)
+end
+--// DESTROY
+
+if CONFIG.DESTROY == true then
+
+    for _, obj in ipairs(Workspace:GetChildren()) do
+        if obj.Name ~= "Eggs" and 
+           obj.Name ~= "Activations" and 
+           obj.Name ~= "Players" and 
+           obj.Name ~= "TeleportPoints" and 
+           obj.Name ~= "Terrain" and 
+           not obj:IsA("Camera") and 
+           (localPlayer and obj ~= localPlayer.Character) then
+            
+            obj:Destroy()
+        end
+    end
+
+    Workspace.Gravity = 0
+    print("Destroy cleanup & zero gravity applied!")
+end
+
+--// CHARACTER HELPERS
+local function getRoot()
+    local character = player.Character or player.CharacterAdded:Wait()
+    return character:FindFirstChild("HumanoidRootPart") or character:WaitForChild("HumanoidRootPart", 5)
+end
+
+local function teleportTo(targetPos)
+    local root = getRoot()
+    if not root then return false end
+    root.CFrame = CFrame.new(targetPos) * CFrame.new(0, 3, 0)
+    task.wait(CONFIG.TELEPORT_WAIT)
+    return true
+end
+
+--// GET ACTIVE EGG NAME (Supports "BOUNTY" dynamic lookup)
+-- Store a cached version of the bounty egg
+local cachedBountyEgg = "BOUNTY"
+
+task.spawn(function()
+    while true do
+        local success, bountyData = pcall(function()
+            return SecretBountyService:Get()
+        end)
+        if success and bountyData and bountyData.Egg then
+            cachedBountyEgg = bountyData.Egg
+        end
+        task.wait(300) -- Wait 5 minutes before checking again
+    end
+end)
+
+local function getTargetEggName()
+    if CONFIG.HATCH_EGG_NAME == "BOUNTY" then
+        return cachedBountyEgg
+    end
+    return CONFIG.HATCH_EGG_NAME
+end
+
+--// FIND EGG HOTKEY
+local function getEggHotkeyPosition()
+    local eggsFolder = Workspace:FindFirstChild(CONFIG.EGG_FOLDER)
+    if not eggsFolder then return nil end
+
+    local targetEggName = getTargetEggName()
+    local egg = eggsFolder:FindFirstChild(targetEggName, true)
+    if not egg then return nil end
+
+    local hotkey = egg:FindFirstChild(CONFIG.EGG_HOTKEY_PART, true)
+    if hotkey and hotkey:IsA("BasePart") then
+        return hotkey.Position
+    end
+    return nil
+end
+
+--// HATCH DISPLAY CLEANUP
+local function isHatchDisplay(obj)
+    if obj.Name == "Egg" then return true end
+    return obj:IsA("Model")
+        and obj:FindFirstChild("State")
+        and obj:FindFirstChild("Decore")
+        and obj:FindFirstChild("Root")
+end
+
+for _, obj in ipairs(Workspace:GetChildren()) do
+    if isHatchDisplay(obj) then obj:Destroy() end
+end
+
+Workspace.ChildAdded:Connect(function(obj)
+    task.defer(function()
+        if obj.Parent == Workspace and isHatchDisplay(obj) then
+            obj:Destroy()
+        end
+    end)
+end)
+
+--// UI READER & REMAINDER CALCULATOR (`Target - Current = Remaining`)
+local function getQuestDetails()
+    local pGui = player:FindFirstChild("PlayerGui")
+    local screenGui = pGui and pGui:FindFirstChild("ScreenGui")
+    local shardQuests = screenGui and screenGui:FindFirstChild("ShardQuests")
+    local inner = shardQuests and shardQuests:FindFirstChild("Content", true) and shardQuests.Content:FindFirstChild("Inner", true)
+    local questFrame = inner and inner:FindFirstChild("Quest", true)
+    
+    if not questFrame then
+        return "", 0
+    end
+
+    local questLabel = questFrame:FindFirstChild("Quest")
+    local progressObj = questFrame:FindFirstChild("Progress")
+    local progressLabel = progressObj and (progressObj:FindFirstChild("TextLabel") or progressObj)
+
+    local questText = (questLabel and questLabel:IsA("TextLabel")) and questLabel.Text or ""
+    local progressText = (progressLabel and progressLabel:IsA("TextLabel")) and progressLabel.Text or ""
+
+    local remaining = 0
+
+    local currentStr, targetStr = string.match(progressText, "([%d,]+)%s*/%s*([%d,]+)")
+    if currentStr and targetStr then
+        local currentNum = tonumber((string.gsub(currentStr, ",", ""))) or 0
+        local targetNum = tonumber((string.gsub(targetStr, ",", ""))) or 0
+        remaining = math.max(0, targetNum - currentNum)
+    else
+        local numStr = string.match(questText, "([%d,]+)")
+        if numStr then
+            remaining = tonumber((string.gsub(numStr, ",", ""))) or 0
+        end
+    end
+
+    return questText, remaining
+end
+
+--// LEADERSTATS HELPER
+local function getStatValue(statName)
+    local leaderstats = player:FindFirstChild("leaderstats")
+    local stat = leaderstats and leaderstats:FindFirstChild(statName)
+    if stat and (stat:IsA("IntValue") or stat:IsA("NumberValue")) then
+        return stat.Value
+    end
+    return 0
+end
+
+--// REFRESH AT RING HELPER
+local function checkAndClaimAtRing()
+    print("Visiting ring to claim/start Hard quest...")
+    teleportTo(CONFIG.RING_POS)
+    task.wait(0.5)
+    pcall(function()
+        remote:FireServer("ClaimShardQuestReward")
+        task.wait(0.5)
+        remote:FireServer("GetShardQuest", "Hard")
+    end)
+    task.wait(1)
+end
+
+sendDiscordAlert("Hatching", "Username " .. player.Name)
+
+--// MAIN AUTOMATION LOOP
+task.spawn(function()
+    while true do
+        checkAndClaimAtRing()
+        
+        local questText, remaining = getQuestDetails()
+        local activeEggName = getTargetEggName()
+        print(string.format("Detected Quest: %s | Remaining: %d | Target Egg: %s", questText, remaining, activeEggName))
+
+        -- 1. BUBBLE QUEST
+        if string.find(questText, "Bubbles") then
+            if remaining > 0 then
+                local startBubbles = getStatValue("Bubbles Blown")
+                local targetBubbles = startBubbles + remaining
+                
+                print(string.format("-> Grinding %d remaining Bubbles (Target Stat: %d)", remaining, targetBubbles))
+                teleportTo(CONFIG.BUBBLE_POS)
+                
+                while getStatValue("Bubbles Blown") < targetBubbles do
+                    pcall(function()
+                        remote:FireServer("BlowBubble")
+                    end)
+                    task.wait(0.1)
+                end
+                print("-> Target Bubbles reached!")
+                sendDiscordAlert("Quest Completed", "Finished Bubble Quest! Moving to next objective.")
+            end
+
+        -- 2. EGG QUEST
+        elseif string.find(questText, "Eggs") then
+            if remaining > 0 then
+                local startEggs = getStatValue("Eggs Opened")
+                local targetEggs = startEggs + remaining
+                
+                print(string.format("-> Hatching %d remaining Eggs on '%s' (Target Stat: %d)", remaining, activeEggName, targetEggs))
+                local eggPos = getEggHotkeyPosition()
+                if eggPos then teleportTo(eggPos) end
+
+                while getStatValue("Eggs Opened") < targetEggs do
+                    pcall(function()
+                        remote:FireServer("PurchaseEgg", activeEggName, true)
+                    end)
+                    task.wait(CONFIG.HATCH_INTERVAL)
+                end
+                print("-> Target Eggs reached!")
+                sendDiscordAlert("Quest Completed", "Finished Egg Quest on " .. activeEggName .. player.Name"!")
+            end
+
+        -- 3. CURRENCY / GEMS / LEGENDARIES (30-minute passive check)
+        else
+            print(string.format("-> Passive/Currency/Legendary quest. Hatching '%s' & checking ring in 30 mins...", activeEggName))
+            local eggPos = getEggHotkeyPosition()
+            if eggPos then teleportTo(eggPos) end
+
+            local checkStart = tick()
+            while tick() - checkStart < CONFIG.PASSIVE_CHECK_INTERVAL do
+                pcall(function()
+                    remote:FireServer("PurchaseEgg", activeEggName, true)
+                end)
+                task.wait(CONFIG.HATCH_INTERVAL)
+            end
+        end
+
+        task.wait(0.5)
+    end
+end)
