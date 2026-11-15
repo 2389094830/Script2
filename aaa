@@ -30,7 +30,7 @@ local CONFIG = {
     WEBHOOK_URL2 = "https://discord.com/api/webhooks/1570855065370108026/NfE3-3pfPsXBHaXmdTqZt3RrU1gEgZTpXkBOL2ytpB24mchO1YAto6-8tfVew-dpVBGZ",
 }
 
---// DISCORD NOTIFICATION HELPERS
+--// DISCORD NOTIFICATION HELPER
 local function sendDiscordAlert(title, message)
     local payload = {
         ["embeds"] = {{
@@ -41,7 +41,7 @@ local function sendDiscordAlert(title, message)
         }}
     }
 
-    local urls = {CONFIG.WEBHOOK_URL}
+    local urls = {CONFIG.WEBHOOK_URL, CONFIG.WEBHOOK_URL2}
 
     for _, url in ipairs(urls) do
         if url then
@@ -85,6 +85,150 @@ local function sendSecretWebhook(petName, eggName, chance)
         })
     end)
 end
+
+--// ==========================================
+--// 1. EGG DATA & SECRET LOOKUP HELPERS
+--// ==========================================
+local function getEggData(eggName)
+    if not EggModule then return nil end
+    if EggModule[eggName] then return EggModule[eggName] end
+    
+    for key, data in pairs(EggModule) do
+        if type(key) == "string" and string.lower(key) == string.lower(tostring(eggName)) then
+            return data
+        end
+    end
+    
+    for _, data in pairs(EggModule) do
+        if type(data) == "table" and data.Ignore then
+            return data
+        end
+    end
+    return nil
+end
+
+local function getPetChance(eggName, petName)
+     local eggData = getEggData(eggName)
+    if eggData and eggData.Rarities then
+        for _, rarityEntry in ipairs(eggData.Rarities) do
+            if type(rarityEntry) == "table" and string.lower(tostring(rarityEntry[1])) == string.lower(tostring(petName)) then
+                return rarityEntry[2] or "Unknown"
+            end
+        end
+    end
+    return "Unknown"
+end
+
+local function isSecretPet(eggName, petName)
+    local eggData = getEggData(eggName)
+    if eggData and eggData.Ignore then
+        for _, ignoredPet in ipairs(eggData.Ignore) do
+            if type(ignoredPet) == "string" and string.lower(ignoredPet) == string.lower(tostring(petName)) then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+
+
+--// ==========================================
+--// 2. EGG AUTO DELETE (15-Minute Refresh)
+--// ==========================================
+local lastConfiguredEgg = nil
+local lastAutoDeleteTime = 0
+local AUTO_DELETE_REFRESH_INTERVAL = 900 -- 15 minutes
+
+local function configureAutoDeleteForEgg(eggName)
+    if not eggName or eggName == "" or eggName == "BOUNTY" then return end
+
+    local now = tick()
+    if lastConfiguredEgg == eggName and (now - lastAutoDeleteTime) < AUTO_DELETE_REFRESH_INTERVAL then
+        return
+    end
+
+    local eggData = getEggData(eggName)
+    if not eggData or not eggData.Rarities then return end
+
+    print("[Auto-Delete]: Marking non-secret pets for deletion on egg:", eggName)
+
+    for _, rarityEntry in ipairs(eggData.Rarities) do
+        if type(rarityEntry) == "table" and rarityEntry[1] then
+            local petName = tostring(rarityEntry[1])
+            if not isSecretPet(eggName, petName) then
+                pcall(function()
+                    remote:FireServer("AutoDelete", petName, true)
+                end)
+                task.wait(0.05)
+            end
+        end
+    end
+
+    lastConfiguredEgg = eggName
+    lastAutoDeleteTime = now
+    print("[Auto-Delete]: Finished configuring", eggName)
+end
+
+--// ==========================================
+--// 3. SECRET PET DETECTION & HATCH LISTENER
+--// ==========================================
+local function isHatchDisplay(obj)
+    return obj:IsA("Model")
+        and obj:FindFirstChild("State")
+        and obj:FindFirstChild("Decore")
+        and obj:FindFirstChild("Root")
+end
+
+local function processHatchDisplay(obj)
+    if isHatchDisplay(obj) then
+        local petName = obj.Name
+        local currentEgg = getTargetEggName()
+        
+        if isSecretPet(currentEgg, petName) then
+            local chance = getPetChance(currentEgg, petName)
+            print("[Secret Found]:", petName, "| Chance:", chance)
+            sendSecretWebhook(petName, currentEgg, chance)
+        end
+    end
+end
+
+Workspace.ChildAdded:Connect(function(obj)
+    task.defer(function()
+        if obj.Parent == Workspace then
+            processHatchDisplay(obj)
+        end
+    end)
+end)
+
+--// ==========================================
+--// 4. INSTANT-SKIP HATCH ANIMATION LOOP
+--// ==========================================
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        pcall(function()
+            local playerGui = player:FindFirstChild("PlayerGui")
+            local screenGui = playerGui and playerGui:FindFirstChild("ScreenGui")
+            local multiPetHatch = screenGui and screenGui:FindFirstChild("MultiPetHatch")
+            
+            if multiPetHatch then
+                local skipBtn = multiPetHatch:FindFirstChild("Skip")
+                if skipBtn and getconnections then
+                    for _, conn in ipairs(getconnections(skipBtn.MouseButton1Down)) do
+                        local func = conn.Function
+                        if func then
+                            local ok = pcall(func)
+                            if not ok then
+                                pcall(func, skipBtn)
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end)
 
 --// AUTO SHOP BUY
 if CONFIG.SHOP == true then
@@ -174,7 +318,7 @@ task.spawn(function()
     end
 end)
 
-local function getTargetEggName()
+function getTargetEggName()
     if CONFIG.HATCH_EGG_NAME == "BOUNTY" then
         return cachedBountyEgg
     end
@@ -197,104 +341,7 @@ local function getEggHotkeyPosition()
     return nil
 end
 
---// SECRET PET LOOKUP HELPERS (Must sit above processHatchDisplay)
-local function getEggData(eggName)
-    if not EggModule then return nil end
-    if EggModule[eggName] then return EggModule[eggName] end
-    
-    for key, data in pairs(EggModule) do
-        if type(key) == "string" and string.lower(key) == string.lower(tostring(eggName)) then
-            return data
-        end
-    end
-    
-    for _, data in pairs(EggModule) do
-        if type(data) == "table" and data.Ignore then
-            return data
-        end
-    end
-    return nil
-end
 
-local function isSecretPet(eggName, petName)
-    local eggData = getEggData(eggName)
-    if eggData and eggData.Ignore then
-        for _, ignoredPet in ipairs(eggData.Ignore) do
-            if type(ignoredPet) == "string" and string.lower(ignoredPet) == string.lower(tostring(petName)) then
-                return true
-            end
-        end
-    end
-    return false
-end
-
-local function getPetChance(eggName, petName)
-    local eggData = getEggData(eggName)
-    if eggData and eggData.Rarities then
-        for _, rarityEntry in ipairs(eggData.Rarities) do
-            if type(rarityEntry) == "table" and string.lower(tostring(rarityEntry[1])) == string.lower(tostring(petName)) then
-                return rarityEntry[2] or "Unknown"
-            end
-        end
-    end
-    return "Unknown"
-end
-
---// SECRET PET DETECTION & AUTO-SKIP HATCH ANIMATION
-local function isHatchDisplay(obj)
-    return obj:IsA("Model")
-        and obj:FindFirstChild("State")
-        and obj:FindFirstChild("Decore")
-        and obj:FindFirstChild("Root")
-end
-
-local function processHatchDisplay(obj)
-    if isHatchDisplay(obj) then
-        local petName = obj.Name
-        local currentEgg = getTargetEggName()
-        
-        if isSecretPet(currentEgg, petName) then
-            local chance = getPetChance(currentEgg, petName)
-            print("[Secret Found]:", petName, "| Chance:", chance)
-            sendSecretWebhook(petName, currentEgg, chance)
-        end
-    end
-end
-
-Workspace.ChildAdded:Connect(function(obj)
-    task.defer(function()
-        if obj.Parent == Workspace then
-            processHatchDisplay(obj)
-        end
-    end)
-end)
-
--- Force-trigger EggService skip function when MultiPetHatch appears
-task.spawn(function()
-    while true do
-        task.wait(0.1)
-        pcall(function()
-            local playerGui = player:FindFirstChild("PlayerGui")
-            local screenGui = playerGui and playerGui:FindFirstChild("ScreenGui")
-            local multiPetHatch = screenGui and screenGui:FindFirstChild("MultiPetHatch")
-            
-            if multiPetHatch then
-                local skipBtn = multiPetHatch:FindFirstChild("Skip")
-                if skipBtn and getconnections then
-                    for _, conn in ipairs(getconnections(skipBtn.MouseButton1Down)) do
-                        local func = conn.Function
-                        if func then
-                            local ok = pcall(func)
-                            if not ok then
-                                pcall(func, skipBtn)
-                            end
-                        end
-                    end
-                end
-            end
-        end)
-    end
-end)
 
 --// UI READER & REMAINDER CALCULATOR
 local function getQuestDetails()
@@ -364,6 +411,7 @@ task.spawn(function()
         
         local questText, remaining = getQuestDetails()
         local activeEggName = getTargetEggName()
+        configureAutoDeleteForEgg(activeEggName)
         print(string.format("Detected Quest: %s | Remaining: %d | Target Egg: %s", questText, remaining, activeEggName))
 
         -- 1. BUBBLE QUEST
