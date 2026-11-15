@@ -41,7 +41,7 @@ local function sendDiscordAlert(title, message)
         }}
     }
 
-    local urls = "https://discord.com/api/webhooks/1570625821121454200/sxT-R7DSjI4yqOsBTacifbhE_FCfs16RhttBtmWiGlof5gF32_-fdPefEPcTYn_JrxV9",
+    local urls = {CONFIG.WEBHOOK_URL}
 
     for _, url in ipairs(urls) do
         if url then
@@ -78,7 +78,7 @@ local function sendSecretWebhook(petName, eggName, chance)
 
     pcall(function()
         request({
-            Url = "https://discord.com/api/webhooks/1570855065370108026/NfE3-3pfPsXBHaXmdTqZt3RrU1gEgZTpXkBOL2ytpB24mchO1YAto6-8tfVew-dpVBGZ",
+            Url = webhookUrl,
             Method = "POST",
             Headers = {["Content-Type"] = "application/json"},
             Body = HttpService:JSONEncode(payload)
