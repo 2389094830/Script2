@@ -41,7 +41,7 @@ local function sendDiscordAlert(title, message)
         }}
     }
 
-    local urls = {CONFIG.WEBHOOK_URL, CONFIG.WEBHOOK_URL2}
+    local urls = {CONFIG.WEBHOOK_URL}
 
     for _, url in ipairs(urls) do
         if url then
