@@ -9,6 +9,9 @@ local remote = ReplicatedStorage:WaitForChild("NetworkRemoteEvent")
 
 -- Require SecretBountyService for dynamic bounty egg tracking
 local SecretBountyService = require(ReplicatedStorage:WaitForChild("Assets"):WaitForChild("Modules"):WaitForChild("SecretBountyService"))
+local lastConfiguredEgg = nil
+local lastAutoDeleteTime = 0
+local AUTO_DELETE_REFRESH_INTERVAL = 900 -- 15 minutes in seconds
 
 --// CONFIGURATION
 local CONFIG = {
@@ -307,3 +310,38 @@ task.spawn(function()
         task.wait(0.5)
     end
 end)
+
+--// EGG AUTO DELETE
+
+local function configureAutoDeleteForEgg(eggName)
+    if not eggName or eggName == "" or eggName == "BOUNTY" then return end
+
+    local now = tick()
+    -- Skip only if it's the exact same egg AND less than 15 minutes have passed
+    if lastConfiguredEgg == eggName and (now - lastAutoDeleteTime) < AUTO_DELETE_REFRESH_INTERVAL then
+        return
+    end
+
+    local eggData = getEggData(eggName)
+    if not eggData or not eggData.Rarities then return end
+
+    print("[Auto-Delete]: Marking non-secret pets for deletion on egg:", eggName)
+
+    for _, rarityEntry in ipairs(eggData.Rarities) do
+        if type(rarityEntry) == "table" and rarityEntry[1] then
+            local petName = tostring(rarityEntry[1])
+            
+            -- Only fire the remote if it's NOT a secret pet (secrets stay false by default)
+            if not isSecretPet(eggName, petName) then
+                pcall(function()
+                    remote:FireServer("AutoDelete", petName, true)
+                end)
+                task.wait(0.05)
+            end
+        end
+    end
+
+    lastConfiguredEgg = eggName
+    lastAutoDeleteTime = now
+    print("[Auto-Delete]: Finished configuring", eggName)
+end
