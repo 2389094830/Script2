@@ -138,7 +138,7 @@ end
 --// ==========================================
 local lastConfiguredEgg = nil
 local lastAutoDeleteTime = 0
-local AUTO_DELETE_REFRESH_INTERVAL = 900 -- 15 minutes
+local AUTO_DELETE_REFRESH_INTERVAL = 30 -- 15 minutes
 
 local function configureAutoDeleteForEgg(eggName)
     if not eggName or eggName == "" or eggName == "BOUNTY" then return end
