@@ -87,8 +87,9 @@ local function sendSecretWebhook(petName, eggName, chance)
 end
 
 --// ==========================================
---// 1. EGG DATA & SECRET LOOKUP HELPERS
+--// 1. EGG DATA, SECRET & BOUNTY LOOKUP HELPERS
 --// ==========================================
+
 local function getEggData(eggName)
     if not EggModule then return nil end
     if EggModule[eggName] then return EggModule[eggName] end
@@ -107,8 +108,18 @@ local function getEggData(eggName)
     return nil
 end
 
+local function isBountyPet(petName)
+    if SecretBountyService and SecretBountyService.IsBountyPet then
+        local ok, result = pcall(function()
+            return SecretBountyService:IsBountyPet(petName)
+        end)
+        if ok then return result end
+    end
+    return false
+end
+
 local function getPetChance(eggName, petName)
-     local eggData = getEggData(eggName)
+    local eggData = getEggData(eggName)
     if eggData and eggData.Rarities then
         for _, rarityEntry in ipairs(eggData.Rarities) do
             if type(rarityEntry) == "table" and string.lower(tostring(rarityEntry[1])) == string.lower(tostring(petName)) then
@@ -120,6 +131,7 @@ local function getPetChance(eggName, petName)
 end
 
 local function isSecretPet(eggName, petName)
+    -- 1. Check standard secret ignore list from egg data
     local eggData = getEggData(eggName)
     if eggData and eggData.Ignore then
         for _, ignoredPet in ipairs(eggData.Ignore) do
@@ -128,10 +140,14 @@ local function isSecretPet(eggName, petName)
             end
         end
     end
+    
+    -- 2. Check if it's an active/registered bounty pet
+    if isBountyPet(petName) then
+        return true
+    end
+    
     return false
 end
-
-
 
 --// ==========================================
 --// 2. EGG AUTO DELETE (15-Minute Refresh)
