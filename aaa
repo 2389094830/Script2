@@ -150,20 +150,16 @@ local function isSecretPet(eggName, petName)
 end
 
 --// ==========================================
---// 2. EGG AUTO DELETE (15-Minute Refresh)
+--// 2. EGG AUTO DELETE 
 --// ==========================================
 local lastConfiguredEgg = nil
 local lastAutoDeleteTime = 0
 local AUTO_DELETE_REFRESH_INTERVAL = 10 
 
--- Keep track of your currently selected or active egg globally
-local currentActiveEgg = nil 
-
 local function configureAutoDeleteForEgg(eggName)
     if not eggName or eggName == "" or eggName == "BOUNTY" then return end
 
     local now = tick()
-    -- If it's the same egg and 10 seconds haven't passed yet, skip
     if lastConfiguredEgg == eggName and (now - lastAutoDeleteTime) < AUTO_DELETE_REFRESH_INTERVAL then
         return
     end
@@ -190,6 +186,16 @@ local function configureAutoDeleteForEgg(eggName)
     print("[Auto-Delete]: Finished configuring", eggName)
 end
 
+--// BACKGROUND LOOP: Automatically syncs with getTargetEggName() every 10 seconds
+task.spawn(function()
+    while true do
+        local targetEgg = getTargetEggName()
+        if targetEgg then
+            configureAutoDeleteForEgg(targetEgg)
+        end
+        task.wait(AUTO_DELETE_REFRESH_INTERVAL)
+    end
+end)
 --// BACKGROUND LOOP: Automatically triggers the check every 10 seconds
 task.spawn(function()
     while true do
