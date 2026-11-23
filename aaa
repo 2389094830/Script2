@@ -86,6 +86,28 @@ local function sendSecretWebhook(petName, eggName, chance)
     end)
 end
 
+--// GET ACTIVE EGG NAME (Supports "BOUNTY" dynamic lookup)
+local cachedBountyEgg = "BOUNTY"
+
+task.spawn(function()
+    while true do
+        local success, bountyData = pcall(function()
+            return SecretBountyService:Get()
+        end)
+        if success and bountyData and bountyData.Egg then
+            cachedBountyEgg = bountyData.Egg
+        end
+        task.wait(300)
+    end
+end)
+
+function getTargetEggName()
+    if CONFIG.HATCH_EGG_NAME == "BOUNTY" then
+        return cachedBountyEgg
+    end
+    return CONFIG.HATCH_EGG_NAME
+end
+
 --// ==========================================
 --// 1. EGG DATA, SECRET & BOUNTY LOOKUP HELPERS
 --// ==========================================
@@ -339,28 +361,6 @@ local function teleportTo(targetPos)
     root.CFrame = CFrame.new(targetPos) * CFrame.new(0, 3, 0)
     task.wait(CONFIG.TELEPORT_WAIT)
     return true
-end
-
---// GET ACTIVE EGG NAME (Supports "BOUNTY" dynamic lookup)
-local cachedBountyEgg = "BOUNTY"
-
-task.spawn(function()
-    while true do
-        local success, bountyData = pcall(function()
-            return SecretBountyService:Get()
-        end)
-        if success and bountyData and bountyData.Egg then
-            cachedBountyEgg = bountyData.Egg
-        end
-        task.wait(300)
-    end
-end)
-
-function getTargetEggName()
-    if CONFIG.HATCH_EGG_NAME == "BOUNTY" then
-        return cachedBountyEgg
-    end
-    return CONFIG.HATCH_EGG_NAME
 end
 
 --// FIND EGG HOTKEY
