@@ -311,6 +311,8 @@ if CONFIG.SHOP == true then
             task.wait(0.1)
             remote:FireServer("BuyEventShopItem", 7, 3)
             task.wait(0.1)
+            remote:FireServer("PetUnlockedDelete")
+            task.wait(0.1)
         end
     end)
 end
