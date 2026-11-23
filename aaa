@@ -154,12 +154,16 @@ end
 --// ==========================================
 local lastConfiguredEgg = nil
 local lastAutoDeleteTime = 0
-local AUTO_DELETE_REFRESH_INTERVAL = 10 -- 15 minutes
+local AUTO_DELETE_REFRESH_INTERVAL = 10 
+
+-- Keep track of your currently selected or active egg globally
+local currentActiveEgg = nil 
 
 local function configureAutoDeleteForEgg(eggName)
     if not eggName or eggName == "" or eggName == "BOUNTY" then return end
 
     local now = tick()
+    -- If it's the same egg and 10 seconds haven't passed yet, skip
     if lastConfiguredEgg == eggName and (now - lastAutoDeleteTime) < AUTO_DELETE_REFRESH_INTERVAL then
         return
     end
@@ -185,6 +189,18 @@ local function configureAutoDeleteForEgg(eggName)
     lastAutoDeleteTime = now
     print("[Auto-Delete]: Finished configuring", eggName)
 end
+
+--// BACKGROUND LOOP: Automatically triggers the check every 10 seconds
+task.spawn(function()
+    while true do
+        task.wait(AUTO_DELETE_REFRESH_INTERVAL)
+        
+        -- Make sure `currentActiveEgg` updates whenever you select an egg in your script
+        if currentActiveEgg then
+            configureAutoDeleteForEgg(currentActiveEgg)
+        end
+    end
+end)
 
 --// ==========================================
 --// 3. SECRET PET DETECTION & HATCH LISTENER
@@ -250,23 +266,23 @@ end)
 if CONFIG.SHOP == true then
     task.spawn(function()
         while true do 
-            task.wait(1)
+            task.wait(0.1)
             remote:FireServer("BuyShardShopItem", "1")
-            task.wait(1)
+            task.wait(0.1)
             remote:FireServer("BuyShardShopItem", 2)
-            task.wait(1)
+            task.wait(0.1)
             remote:FireServer("BuyShardShopItem", 3)
-            task.wait(1)
+            task.wait(0.1)
             remote:FireServer("BuyMerchantItem", 1)
-            task.wait(1)
+            task.wait(0.1)
             remote:FireServer("BuyMerchantItem", 2)
-            task.wait(1)
+            task.wait(0.1)
             remote:FireServer("BuyEventShopItem", 7, 1)
-            task.wait(1)
+            task.wait(0.1)
             remote:FireServer("BuyEventShopItem", 7, 2)
-            task.wait(1)
+            task.wait(0.1)
             remote:FireServer("BuyEventShopItem", 7, 3)
-            task.wait(1)
+            task.wait(0.1)
         end
     end)
 end
